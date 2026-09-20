@@ -82,18 +82,19 @@ class WindowGenerator:
 
         return header, offsets_train, offsets_test, nrows, n_train_rows
 
-    def _read_chunk(self, offset, nrows):
+    @staticmethod
+    def _read_chunk(csv_path, offset, header, columns, index_column, chunksize):
         """Seek to a byte offset and read nrows rows. Returns (values, timestamps)."""
-        with open(self._csv_path) as f:
+        with open(csv_path) as f:
             f.seek(offset)  # find starting position in file
             chunk = pd.read_csv(
                 f,
                 header=None,
-                names=self._header,
-                usecols=self._columns,
-                parse_dates=[self._index_column],
-                index_col=self._index_column,
-                nrows=nrows,
+                names=header,
+                usecols=columns,
+                parse_dates=[index_column],
+                index_col=index_column,
+                nrows=chunksize,
             )
         return chunk.values.astype('float32'), chunk.index.values
 
@@ -102,7 +103,14 @@ class WindowGenerator:
         total = total_sq = None
         n = 0
         for offset in self._chunk_offsets_train:
-            arr, _ = self._read_chunk(offset, self._chunksize)
+            arr, _ = self._read_chunk(
+                self._csv_path, 
+                offset, 
+                self._header, 
+                self._columns,
+                self._index_column, 
+                self._chunksize,
+            )
             a64 = arr.astype('float64')
             if total is None:
                 total, total_sq = a64.sum(axis=0), (a64 ** 2).sum(axis=0)
@@ -117,7 +125,15 @@ class WindowGenerator:
 
     def _build_windows_from_offset(self, offset, shuffle):
         # read chunk including enough lookahead rows to use the bottom rows of the chunk
-        arr, idx = self._read_chunk(offset, self._chunksize + self._window_size + self._horizon)
+        arr, idx = self._read_chunk(
+            self._csv_path, 
+            offset, 
+            self._header, 
+            self._columns,
+            self._index_column, 
+            self._chunksize + self._window_size + self._horizon
+        )
+
         arr = (arr - self._mean) / self._std
 
         n_starts = len(arr) - self._window_size - self._horizon  # number of valid window starting positions
